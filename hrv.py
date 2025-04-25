@@ -4,6 +4,8 @@ from piotimer import Piotimer
 from fifo import Fifo
 from led import Led
 import time
+import micropython
+micropython.alloc_emergency_exception_buf(200)
 
 i2c = I2C(1, scl=Pin(15), sda=Pin(14), freq=400000)
 oled_width = 128
@@ -40,6 +42,18 @@ class Encoder:
         if time.ticks_diff(ms, self.time) > 150:
             self.btn_fifo.put(1)
         self.time = ms
+
+class Sensor:
+    def __init__(self, pin):
+        self.fifo = Fifo(500)
+        self.adc = ADC(Pin(pin, Pin.IN))
+    def start(self):
+        self.timer = Piotimer(period=4, mode=Piotimer.PERIODIC, callback=self.callback)
+    def callback(self, skibidi): # skibidi = dummy argument to homogenise piotimer with default micropython timer
+        self.fifo.put(self.adc.read_u16())
+    def end(self):
+        self.timer.deinit()
+        
 class Cursor:
     def __init__(self, cap = (0, 0), increment = 1, position = 0):
         self.position = position
@@ -65,14 +79,9 @@ class UI:
         self.SW_0 = Pin(pin_sw_0, mode = Pin.IN, pull = Pin.PULL_UP)
         self.SW_2 = Pin(pin_sw_2, mode = Pin.IN, pull = Pin.PULL_UP)
         self.rot = encoder
-        self.pulse_sensor = ADC(Pin(sensor_pin, Pin.IN))
+        self.sensor = Sensor(sensor_pin)
         self.screen = self.menu_setup
         self.data = []
-        self.cursor = Cursor()
-        self.alt_cursor_1 = Cursor()
-        self.alt_cursor_2 = Cursor()
-        self.input_scale = 1
-        self.input_offset = 0
         self.reset()
         
     def display(self):
@@ -90,10 +99,17 @@ class UI:
 #    def move(self, cursor):
     def reset(self):
         oled.fill(0)
+        # Cursors
         self.cursor = Cursor()
         self.alt_cursor_1 = Cursor()
         self.alt_cursor_2 = Cursor()
         
+    def analysis_setup(self):
+        self.cursor.cap = (0, 1)
+        self.screen = self.analysis
+        
+    def analysis(self):
+        pass
     def menu_setup(self):
         self.cursor.cap = (0, 3)
         self.screen = self.menu
@@ -107,7 +123,7 @@ class UI:
         oled.rect(0, self.cursor.position*10, 12, 8, 0, True)
         oled.text("->", 0, self.cursor.position*10, 1)
         
-        print(self.pulse_sensor.read_u16())
+        #print(self.pulse_sensor.read_u16())
         
 
         while self.rot.btn_fifo.has_data():
@@ -116,7 +132,7 @@ class UI:
             if self.cursor.position == 0:
                 self.screen = self.sensor_setup
             if self.cursor.position == 1:
-                self.screen = self.analysis
+                self.screen = self.analysis_setup
             if self.cursor.position == 2:
                 self.screen = self.kubios
             if self.cursor.position == 3:
@@ -124,43 +140,17 @@ class UI:
         
 
     def sensor_setup(self):
-        self.data = []
-        avg = 0
-        for _ in range(5):
-            avg += self.reader.get()
-        avg = int(avg)
-        avg /= 5
-        self.min = avg
-        self.max = avg
-        self.data.append(avg)
-        # Calibrating sensor
-        for _ in range(359):
-            # The average of 5 points
-            avg = 0
-            for _ in range(5):
-                avg += self.reader.get()
-            avg = int(avg)
-            avg /= 5
-            # Calibrate the min-max
-            if self.min > avg:
-                self.min = avg
-            if self.max < avg:
-                self.max = avg
-            self.data.append(avg)
-        self.normalization_value = (oled_height-1)/(self.max-self.min)
-        # Cursors
-        self.cursor.cap = (0, 359-oled_width)
-        self.alt_cursor_1 = Cursor( (0.1, 2), 0.1, 1)
-        self.alt_cursor_2 = Cursor( (-(2**12), 2**12), 250)
-        self.screen = self.sensor_reading_screen
-    def sensor_reading_screen(self):
+        self.sensor.start()
+        self.screen = self.heart_rate_screen
+    def sensor_return(self):
+        self.sensor.end()
+        
+    def heart_rate_screen(self):
         oled.fill(0)
-        for i in range(oled_width):
-            current_y = self.data[i+self.cursor.position]
-            next_y = self.data[i+1+self.cursor.position]
-            scale = self.normalization_value*self.alt_cursor_1.position
-            offset = self.min - self.alt_cursor_2.position
-            oled.line(i, transform(current_y, scale, offset), i+1, transform(next_y, scale, offset), 1)
+        while self.sensor.fifo.has_data():
+            data = self.sensor.fifo.get()
+            print(data)
+            
 
             
 
