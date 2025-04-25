@@ -1,5 +1,5 @@
 import time
-from machine import UART, Pin, I2C, Timer, ADC
+from machine import UART, Pin, I2C, Timer
 from ssd1306 import SSD1306_I2C
 from fifo import Fifo
 
@@ -18,6 +18,7 @@ class Encoder:
         self.a = Pin(rot_a, mode = Pin.IN, pull = Pin.PULL_UP)
         self.b = Pin(rot_b, mode = Pin.IN, pull = Pin.PULL_UP)
         self.fifo = Fifo(30, typecode = 'i')
+        self.fifo_sensor = Fifo(50, typecode = 'i')
         self.a.irq(handler = self.handler, trigger = Pin.IRQ_RISING, hard = True)
     def handler(self, pin):
         if self.b():
@@ -52,6 +53,20 @@ class UI:
                 self.arrow_position-=1
             elif y == 1 and (not self.arrow_position == 3):
                 self.arrow_position+=1
+    def calculate_threshold(self):
+        min = None
+        max = None
+        for _ in range(500):
+            point = self.data.get()
+            if ((min is None) and (max is None)):
+                min = point
+                max = point
+            else:
+                if min > point:
+                    min = point
+                if max < point:
+                    max = point
+        return (min + max)/2
     def menu(self):
         oled.fill(0)
         oled.text("1.Heart rate", 0, 0, 1)
