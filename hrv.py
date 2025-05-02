@@ -11,6 +11,7 @@ i2c = I2C(1, scl=Pin(15), sda=Pin(14), freq=400000)
 oled_width = 128
 oled_height = 64
 oled = SSD1306_I2C(oled_width, oled_height, i2c)
+sample_interval = 4
 
 def transform(y, scale, offset):
     y -= offset
@@ -47,12 +48,73 @@ class Sensor:
     def __init__(self, pin):
         self.fifo = Fifo(500)
         self.adc = ADC(Pin(pin, Pin.IN))
-    def start(self):
-        self.timer = Piotimer(period=4, mode=Piotimer.PERIODIC, callback=self.callback)
+    def timer_start(self):
+        self.timer = Piotimer(period=sample_interval, mode=Piotimer.PERIODIC, callback=self.callback)
     def callback(self, skibidi): # skibidi = dummy argument to homogenise piotimer with default micropython timer
         self.fifo.put(self.adc.read_u16())
-    def end(self):
+    def timer_end(self):
         self.timer.deinit()
+        
+class HRV:
+    def __init__(self):
+        # Data
+        self.interval = []
+        self.threshold = None
+        self.bpm = None
+        self.ppi = None
+        self.bpm_output = 0
+        # Helpers
+        self.current_peak = None
+        self.last_bpm = 0
+        # Counts
+        self.threshold_count = 0
+        self.bpm_update_count = 0
+        # Index
+        self.current_peak_index = 0
+        self.peak_previous_index = None
+        self.peak_i=0
+        
+        
+    def calculate_threshold(self, point):
+            # update min-max values
+            if point < self.min_point:
+                self.min_point = point
+            if point > self.max_point:
+                self.max_point = point
+            if self.threshold_count >= 250: ## this number is how many sample between calculations of the threshold                    
+                self.threshold = (self.min_point + self.max_point) / 2
+                self.threshold_count = 0
+                self.min_point = self.max_point = point
+                if self.current_peak is None:
+                    print("skibidi")
+                    self.current_peak = self.threshold
+            self.threshold_count += 1
+    def calculate_peaks(self, point):
+        self.bpm_update_count += 1
+        self.peak_i += 1
+        if point > self.threshold:
+            if point >= self.current_peak:
+                # Update peak and index when current is higher
+                self.current_peak = point
+                self.current_peak_index = self.peak_i
+        else:
+            # When there are two peaks and they are not the same one then
+            # Calculate ppi, and bpm 
+            if not(self.peak_previous_index is None) and not(self.current_peak_index == self.peak_previous_index):
+                interval = (self.current_peak_index - self.peak_previous_index)  # Erotus
+#                   sec = interval*sample_interval/1000 # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
+                ppi = interval*sample_interval # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
+                minutes = (interval*sample_interval/1000)/60 # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
+                bpm = 1/minutes
+                
+                if self.bpm_update_count >= 250*5 :
+                    self.bpm_output = bpm
+                    self.bpm_update_count = 0
+#                    freq = 1/sec   # Tajuus
+                
+            self.current_peak = self.threshold
+            self.peak_previous_index = self.current_peak_index
+        
         
 class Cursor:
     def __init__(self, cap = (0, 0), increment = 1, position = 0):
@@ -83,6 +145,8 @@ class UI:
         self.screen = self.menu_setup
         self.data = []
         self.reset()
+        self.sample_interval = 4
+        self.interval = []
         
     def display(self):
         while self.rot.fifo.has_data():
@@ -140,127 +204,42 @@ class UI:
         
 
     def sensor_setup(self):
-        self.sensor.start()
-        threshold_count = 0
+        # setup of peak detection and graph and threshold calculation
+        self.hrv = HRV()
+        self.graph_helper = 0
+        self.graph_i = 0
+        self.graph_frequency = 5
+        # Timer
+        self.sensor.timer_start()
         while not self.sensor.fifo.has_data():
             pass
-        min_point = max_point = self.sensor.fifo.get()
-        while threshold_count <= 250:
-            while self.sensor.fifo.has_data():
-                point = self.sensor.fifo.get()
-                threshold_count += 1
-                # Update min-max values
-                if point < min_point:
-                    min_point = point
-                if point > max_point:
-                    max_point = point
+        self.hrv.min_point = self.hrv.max_point = self.sensor.fifo.get()
         
-        self.threshold = (min_point + max_point) / 2
+        while self.hrv.threshold is None:
+            if self.sensor.fifo.has_data():
+                self.hrv.calculate_threshold(self.sensor.fifo.get())
                 
                 
         self.screen = self.heart_rate_screen
     def sensor_return(self):
-        self.sensor.end()
-        self.threshold = None
+        self.sensor.timer_end()
         
     def heart_rate_screen(self):
-        oled.fill(0)
-        i = 0
-        ammount = 6
-        avg = 0
         while self.sensor.fifo.has_data():
-            data = self.sensor.fifo.get()
-            avg+=data
-            i+=1
-#            print(data)
-            if i>=ammount:
-                print(avg/ammount)
-                avg = 0
-                i=0
+            point = self.sensor.fifo.get()
+            self.hrv.calculate_threshold(point)
+            self.hrv.calculate_peaks(point)
+            # Display
+            oled.fill(0)
+            oled.text(f"{int(self.hrv.bpm_output)}",0,0,1)
 
-class Peaks:
-    def __init__(self, fileName):
-        self.data = Filefifo(10, name = fileName)
-        self.calculate_threshold()
-    def get_dynamic_threshold(self, sample_count=500):
-        samples = [self.data.get() for _ in range(sample_count)]
-        return sum(samples) / len(samples)
-    
-    def calculate_threshold(self):
-        self.min = self.max = self.data.get()
-        for _ in range(499):
-            point = self.data.get()
-            print(f'point: {point}')
-            if self.min > point:
-                self.min = point
-            if self.max < point:
-                self.max = point
-        
-        return (self.min + self.max)/2
-    def calculate(self):
-        max = 0
-        max_index_previous = None
-        max_index = 0
-        for i in range(2000):
-            point = self.data.get()
-            if self.min > point:
-                self.min = point
-            if self.max < point:
-                self.max = point
-#            print(point)
-            self.threshold = (self.min + self.max) / 2
-            print(f'point: {point}   threshold: {self.threshold}')
-            if point > self.threshold:
-                if point >= max:
-                    max = point
-                    max_index = i
-            else:
-                if (not max_index_previous is None) and not(max_index == max_index_previous):
-                    diff = (max_index - max_index_previous)  # Erotus
-                    sec = diff*4/1000 # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
-                    freq = 1/sec   # Tajuus
-                    
-                    print("difference", diff)
-                    print("seconds", sec, "s")
-                    print("tajuus", freq, "Hz")
-                    
-                max = self.threshold
-                max_index_previous = max_index
-                
-    def calculate(self):
-        threshold = self.get_dynamic_threshold()
-        print(f"Dynamic threshold: {threshold:.2f}")
-
-        buffer = [self.data.get(), self.data.get(), self.data.get()]
-        previous_peak_index = None
-        cooldown = 0
-        min_peak_distance = int(0.4 * self.sample_rate)  # ~250 ms
-
-        for i in range(45000):
-            buffer.pop(0)
-            buffer.append(self.data.get())
-
-            prev, curr, next_ = buffer
-
-            if cooldown > 0:
-                cooldown -= 1
-                continue
-
-            # Check if current point is a local max and above threshold
-            if curr > threshold and curr > prev and curr > next_:
-                if previous_peak_index is not None:
-                    ppi = (i - 1 - previous_peak_index) * self.ts
-                    if 250 <= ppi <= 2000:
-                        hr = 60000 / ppi
-                        print(f"PPI: {ppi:.1f} ms | HR: {hr:.1f} bpm")
-                previous_peak_index = i - 1
-                cooldown = min_peak_distance  # prevent double-counting too quickly
-            
 
 rot = Encoder(10, 11, 12)
 ui = UI(rot, 27, 9, 7)
 while True:
     ui.display()
     
+
+
 
 
