@@ -248,8 +248,8 @@ class UI:
             if self.ysum_i > 6:
                 current_ypos = int((self.ypos_sum / 7))
                 oled.line(self.xpos, 0,self.xpos, 64, 0)
-                oled.line(self.xpos+1, 0,self.xpos+1, 64, 0)
-                oled.line(self.xpos+1, self.lastpos,self.xpos, current_ypos, 1)
+                oled.line(self.xpos-1, 0,self.xpos-1, 64, 0)
+                oled.line(self.xpos+1,self.lastpos,self.xpos,current_ypos, 1)
                 self.lastpos = current_ypos
                 self.ypos_sum = 0
                 self.ysum_i = 0
