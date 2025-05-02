@@ -166,14 +166,17 @@ class UI:
     def heart_rate_screen(self):
         oled.fill(0)
         i = 0
+        ammount = 6
         avg = 0
         while self.sensor.fifo.has_data():
             data = self.sensor.fifo.get()
             avg+=data
             i+=1
-            if i>=5:
-                print(avg/5)
+#            print(data)
+            if i>=ammount:
+                print(avg/ammount)
                 avg = 0
+                i=0
 
 class Peaks:
     def __init__(self, fileName):
