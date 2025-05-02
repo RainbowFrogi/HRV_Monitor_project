@@ -14,8 +14,8 @@ oled = SSD1306_I2C(oled_width, oled_height, i2c)
 sample_interval = 4
 
 def transform(y, scale, offset):
-    y -= offset
     y *= scale
+    y -= offset
     y = int(y)
     y = 63 - y
     return y
@@ -243,10 +243,12 @@ class UI:
             oled.text(f"{int(self.hrv.bpm_output)}",102,0,1)
             oled.text("BPM",102,10,1)
             #oled.pixel( self.xpos, transform(point, self.hrv.normalization_value, 0), 1)
-            self.ypos_sum += transform(point-self.hrv.min_point, self.hrv.normalization_value, 0)
+            self.ypos_sum += transform(point-self.hrv.min_point, self.hrv.normalization_value*0.6, -20)
             self.ysum_i += 1
-            if self.ysum_i > 4:
-                current_ypos = int((self.ypos_sum / 5))
+            if self.ysum_i > 6:
+                current_ypos = int((self.ypos_sum / 7))
+                oled.line(self.xpos, 0,self.xpos, 64, 0)
+                oled.line(self.xpos+1, 0,self.xpos+1, 64, 0)
                 oled.line(self.xpos+1, self.lastpos,self.xpos, current_ypos, 1)
                 self.lastpos = current_ypos
                 self.ypos_sum = 0
@@ -254,7 +256,6 @@ class UI:
                 self.xpos -= 1
             if self.xpos < 0:
                 self.xpos = 100
-                oled.rect(0,0,102,64,0,1)
             #print(transform(point-self.hrv.min_point, self.hrv.normalization_value, 0))
             #print(ypos_sum)
             
