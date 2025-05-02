@@ -236,7 +236,8 @@ class UI:
             self.hrv.calculate_peaks(point)
             # Display
             oled.fill(0)
-            oled.text(f"{int(self.hrv.bpm_output)}",0,0,1)
+            oled.text(f"{int(self.hrv.bpm_output)}",110,0,1)
+            oled.text("BPM",102,10,1)
             
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
