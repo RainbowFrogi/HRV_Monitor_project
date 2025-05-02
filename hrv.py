@@ -194,7 +194,7 @@ class UI:
             self.rot.btn_fifo.get()
             self.reset()
             if self.cursor.position == 0:
-                self.screen = self.sensor_setup
+                self.screen = self.heart_rate_start_screen
             if self.cursor.position == 1:
                 self.screen = self.analysis_setup
             if self.cursor.position == 2:
@@ -221,6 +221,14 @@ class UI:
                 
                 
         self.screen = self.heart_rate_screen
+    def heart_rate_start_screen(self):
+        
+        oled.text("Start measurment by", 0, 10, 1)
+        oled.text("Pressing the rotary button", 0, 20, 1)
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.screen = self.sensor_setup
     def sensor_return(self):
         self.sensor.timer_end()
         
@@ -232,6 +240,10 @@ class UI:
             # Display
             oled.fill(0)
             oled.text(f"{int(self.hrv.bpm_output)}",0,0,1)
+            
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.screen = self.menu
 
 
 rot = Encoder(10, 11, 12)
