@@ -217,6 +217,11 @@ class UI:
         self.graph_helper = 0
         self.graph_i = 0
         self.graph_frequency = 5
+        # hr graphic variables
+        self.ypos_sum = 0
+        self.ysum_i = 0
+        self.xpos = 100
+        self.lastpos = 0
         # Timer
         self.sensor.timer_start()
         while not self.sensor.fifo.has_data():
@@ -237,9 +242,21 @@ class UI:
             oled.rect(102,0, 28, 20, 0, 1)
             oled.text(f"{int(self.hrv.bpm_output)}",102,0,1)
             oled.text("BPM",102,10,1)
-            print(transform(point, self.hrv.normalization_value, self.hrv.min_point))
-            oled.pixel( 50, transform(point, self.hrv.normalization_value, self.hrv.min_point), 1)
-            oled.scroll(-1,0)
+            #oled.pixel( self.xpos, transform(point, self.hrv.normalization_value, 0), 1)
+            self.ypos_sum += transform(point-self.hrv.min_point, self.hrv.normalization_value, 0)
+            self.ysum_i += 1
+            if self.ysum_i > 4:
+                current_ypos = int((self.ypos_sum / 5))
+                oled.line(self.xpos+1, self.lastpos,self.xpos, current_ypos, 1)
+                self.lastpos = current_ypos
+                self.ypos_sum = 0
+                self.ysum_i = 0
+                self.xpos -= 1
+            if self.xpos < 0:
+                self.xpos = 100
+                oled.rect(0,0,102,64,0,1)
+            #print(transform(point-self.hrv.min_point, self.hrv.normalization_value, 0))
+            #print(ypos_sum)
             
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
