@@ -46,7 +46,7 @@ class Encoder:
 
 class Sensor:
     def __init__(self, pin):
-        self.fifo = Fifo(500)
+        self.fifo = Fifo(100)
         self.adc = ADC(Pin(pin, Pin.IN))
     def timer_start(self):
         self.timer = Piotimer(period=sample_interval, mode=Piotimer.PERIODIC, callback=self.callback)
@@ -54,6 +54,7 @@ class Sensor:
         self.fifo.put(self.adc.read_u16())
     def timer_end(self):
         self.timer.deinit()
+        self.fifo = Fifo(100)
         
 class HRV:
     def __init__(self):
@@ -86,7 +87,6 @@ class HRV:
                 self.threshold_count = 0
                 self.min_point = self.max_point = point
                 if self.current_peak is None:
-                    print("skibidi")
                     self.current_peak = self.threshold
             self.threshold_count += 1
     def calculate_peaks(self, point):
@@ -103,7 +103,7 @@ class HRV:
             if not(self.peak_previous_index is None) and not(self.current_peak_index == self.peak_previous_index):
                 interval = (self.current_peak_index - self.peak_previous_index)  # Erotus
 #                   sec = interval*sample_interval/1000 # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
-                ppi = interval*sample_interval # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
+                ppi = interval*sample_interval #
                 minutes = (interval*sample_interval/1000)/60 # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
                 bpm = 1/minutes
                 
@@ -222,16 +222,13 @@ class UI:
                 
         self.screen = self.heart_rate_screen
     def heart_rate_start_screen(self):
-        
-        oled.text("Start measurment by", 0, 10, 1)
-        oled.text("Pressing the rotary button", 0, 20, 1)
+        oled.text("Start measurment", 0, 10, 1)
+        oled.text("by pressing the ", 0, 20, 1)
+        oled.text("rotary button", 0, 30, 1)
         
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
             self.screen = self.sensor_setup
-    def sensor_return(self):
-        self.sensor.timer_end()
-        
     def heart_rate_screen(self):
         while self.sensor.fifo.has_data():
             point = self.sensor.fifo.get()
@@ -243,7 +240,10 @@ class UI:
             
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
-            self.screen = self.menu
+            self.screen = self.heart_rate_screen_return
+    def heart_rate_screen_return(self):
+        self.sensor.timer_end()
+        self.screen = self.menu
 
 
 rot = Encoder(10, 11, 12)
