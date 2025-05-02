@@ -141,17 +141,117 @@ class UI:
 
     def sensor_setup(self):
         self.sensor.start()
+        threshold_count = 0
+        while not self.sensor.fifo.has_data():
+            pass
+        min_point = max_point = self.sensor.fifo.get()
+        while threshold_count <= 250:
+            while self.sensor.fifo.has_data():
+                point = self.sensor.fifo.get()
+                threshold_count += 1
+                # Update min-max values
+                if point < min_point:
+                    min_point = point
+                if point > max_point:
+                    max_point = point
+        
+        self.threshold = (min_point + max_point) / 2
+                
+                
         self.screen = self.heart_rate_screen
     def sensor_return(self):
         self.sensor.end()
+        self.threshold = None
         
     def heart_rate_screen(self):
         oled.fill(0)
+        i = 0
+        avg = 0
         while self.sensor.fifo.has_data():
             data = self.sensor.fifo.get()
-            print(data)
-            
+            avg+=data
+            i+=1
+            if i>=5:
+                print(avg/5)
+                avg = 0
 
+class Peaks:
+    def __init__(self, fileName):
+        self.data = Filefifo(10, name = fileName)
+        self.calculate_threshold()
+    def get_dynamic_threshold(self, sample_count=500):
+        samples = [self.data.get() for _ in range(sample_count)]
+        return sum(samples) / len(samples)
+    
+    def calculate_threshold(self):
+        self.min = self.max = self.data.get()
+        for _ in range(499):
+            point = self.data.get()
+            print(f'point: {point}')
+            if self.min > point:
+                self.min = point
+            if self.max < point:
+                self.max = point
+        
+        return (self.min + self.max)/2
+    def calculate(self):
+        max = 0
+        max_index_previous = None
+        max_index = 0
+        for i in range(2000):
+            point = self.data.get()
+            if self.min > point:
+                self.min = point
+            if self.max < point:
+                self.max = point
+#            print(point)
+            self.threshold = (self.min + self.max) / 2
+            print(f'point: {point}   threshold: {self.threshold}')
+            if point > self.threshold:
+                if point >= max:
+                    max = point
+                    max_index = i
+            else:
+                if (not max_index_previous is None) and not(max_index == max_index_previous):
+                    diff = (max_index - max_index_previous)  # Erotus
+                    sec = diff*4/1000 # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
+                    freq = 1/sec   # Tajuus
+                    
+                    print("difference", diff)
+                    print("seconds", sec, "s")
+                    print("tajuus", freq, "Hz")
+                    
+                max = self.threshold
+                max_index_previous = max_index
+                
+    def calculate(self):
+        threshold = self.get_dynamic_threshold()
+        print(f"Dynamic threshold: {threshold:.2f}")
+
+        buffer = [self.data.get(), self.data.get(), self.data.get()]
+        previous_peak_index = None
+        cooldown = 0
+        min_peak_distance = int(0.4 * self.sample_rate)  # ~250 ms
+
+        for i in range(45000):
+            buffer.pop(0)
+            buffer.append(self.data.get())
+
+            prev, curr, next_ = buffer
+
+            if cooldown > 0:
+                cooldown -= 1
+                continue
+
+            # Check if current point is a local max and above threshold
+            if curr > threshold and curr > prev and curr > next_:
+                if previous_peak_index is not None:
+                    ppi = (i - 1 - previous_peak_index) * self.ts
+                    if 250 <= ppi <= 2000:
+                        hr = 60000 / ppi
+                        print(f"PPI: {ppi:.1f} ms | HR: {hr:.1f} bpm")
+                previous_peak_index = i - 1
+                cooldown = min_peak_distance  # prevent double-counting too quickly
             
 
 rot = Encoder(10, 11, 12)
