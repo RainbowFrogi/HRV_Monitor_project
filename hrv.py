@@ -235,9 +235,10 @@ class UI:
             self.hrv.calculate_threshold(point)
             self.hrv.calculate_peaks(point)
             # Display
-            oled.fill(0)
+            oled.rect(102,0, 28, 20, 0, 1)
             oled.text(f"{int(self.hrv.bpm_output)}",110,0,1)
             oled.text("BPM",102,10,1)
+            oled.scroll(-1,0)
             
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
