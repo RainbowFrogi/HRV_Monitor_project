@@ -84,6 +84,7 @@ class HRV:
                 self.max_point = point
             if self.threshold_count >= 250: ## this number is how many sample between calculations of the threshold                    
                 self.threshold = (self.min_point + self.max_point) / 2
+                self.normalization_value = (oled_height-1)/(self.max_point-self.min_point)
                 self.threshold_count = 0
                 self.min_point = self.max_point = point
                 if self.current_peak is None:
@@ -202,7 +203,14 @@ class UI:
             if self.cursor.position == 3:
                 self.screen = self.history
         
-
+    def heart_rate_start_screen(self):
+        oled.text("Start measurment", 0, 10, 1)
+        oled.text("by pressing the ", 0, 20, 1)
+        oled.text("rotary button", 0, 30, 1)
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.screen = self.sensor_setup
     def sensor_setup(self):
         # setup of peak detection and graph and threshold calculation
         self.hrv = HRV()
@@ -217,18 +225,9 @@ class UI:
         
         while self.hrv.threshold is None:
             if self.sensor.fifo.has_data():
-                self.hrv.calculate_threshold(self.sensor.fifo.get())
-                
-                
+                self.hrv.calculate_threshold(self.sensor.fifo.get())   
         self.screen = self.heart_rate_screen
-    def heart_rate_start_screen(self):
-        oled.text("Start measurment", 0, 10, 1)
-        oled.text("by pressing the ", 0, 20, 1)
-        oled.text("rotary button", 0, 30, 1)
-        
-        while self.rot.btn_fifo.has_data():
-            self.rot.btn_fifo.get()
-            self.screen = self.sensor_setup
+        oled.fill(0)
     def heart_rate_screen(self):
         while self.sensor.fifo.has_data():
             point = self.sensor.fifo.get()
@@ -236,8 +235,10 @@ class UI:
             self.hrv.calculate_peaks(point)
             # Display
             oled.rect(102,0, 28, 20, 0, 1)
-            oled.text(f"{int(self.hrv.bpm_output)}",110,0,1)
+            oled.text(f"{int(self.hrv.bpm_output)}",102,0,1)
             oled.text("BPM",102,10,1)
+            print(transform(point, self.hrv.normalization_value, self.hrv.min_point))
+            oled.pixel( 50, transform(point, self.hrv.normalization_value, self.hrv.min_point), 1)
             oled.scroll(-1,0)
             
         while self.rot.btn_fifo.has_data():
