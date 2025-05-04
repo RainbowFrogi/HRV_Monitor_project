@@ -59,7 +59,7 @@ class Sensor:
 class HRV:
     def __init__(self):
         # Data
-        self.interval = []
+        self.intervals = []
         self.threshold = None
         self.bpm = None
         self.ppi = None
@@ -84,7 +84,7 @@ class HRV:
                 self.max_point = point
             if self.threshold_count >= 250: ## this number is how many sample between calculations of the threshold                    
                 self.threshold = (self.min_point + self.max_point) / 2
-                self.normalization_value = (oled_height-1)/(self.max_point-self.min_point)
+                self.normalization_value = (oled_height-1)/(self.max_point-self.min_point) ## normalisation value to fit datapoint to oled screen
                 self.threshold_count = 0
                 self.min_point = self.max_point = point
                 if self.current_peak is None:
@@ -108,10 +108,26 @@ class HRV:
                 minutes = (interval*sample_interval/1000)/60 # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
                 bpm = 1/minutes
                 
-                if self.bpm_update_count >= 250*5 :
-                    self.bpm_output = bpm
+                self.intervals.append(interval)
+                                
+                if self.bpm_update_count >= 250*5: ## 250 samples = 1 second, 5 seconds
+                    total = 0
+                    if self.intervals: ##check if list exists to avoid dividing by zero
+                        print("total samples: ",len(self.intervals))
+                        print("average heartrate pre_correction: ", (60 * 1000) / sample_interval / (sum(self.intervals) / len(self.intervals)))
+                    
+                    self.intervals = [i for i in self.intervals if 75 < i < 375] ## Make list out of all usable intervals (75-500*4 ms)
+                    
+                    print("Usable samples: ",len(self.intervals))
+                    
+                    if self.intervals: ##check if list exists to avoid dividing by zero
+                        self.bpm_output = (60 * 1000) / sample_interval / (sum(self.intervals) / len(self.intervals)) ## one minute in ms divided by the average ppi
+                        
+                        print("average heartrate post_correction: ", (60 * 1000) / sample_interval / (sum(self.intervals) / len(self.intervals)))
+                        print("")
+                        
+                    self.intervals = []
                     self.bpm_update_count = 0
-#                    freq = 1/sec   # Tajuus
                 
             self.current_peak = self.threshold
             self.peak_previous_index = self.current_peak_index
@@ -256,8 +272,6 @@ class UI:
                 self.xpos -= 1
             if self.xpos < 0:
                 self.xpos = 100
-            #print(transform(point-self.hrv.min_point, self.hrv.normalization_value, 0))
-            #print(ypos_sum)
             
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
