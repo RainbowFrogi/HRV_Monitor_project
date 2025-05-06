@@ -40,7 +40,7 @@ class Encoder:
             self.fifo.put(1)
     def btn_handler_falling(self, pin):
         ms = time.ticks_ms()
-        if time.ticks_diff(ms, self.time) > 150:
+        if time.ticks_diff(ms, self.time) > 200: ## minimum time between button signals to prevent bounceback signals 
             self.btn_fifo.put(1)
         self.time = ms
 
@@ -59,7 +59,8 @@ class Sensor:
 class HRV:
     def __init__(self):
         # Data
-        self.intervals = []
+        self.intervals = [] #temp list for live screen data
+        self.total_intervals = [] #full list for variability calc
         self.threshold = None
         self.bpm = None
         self.ppi = None
@@ -74,6 +75,7 @@ class HRV:
         self.current_peak_index = 0
         self.peak_previous_index = None
         self.peak_i=0
+        
         
         
     def calculate_threshold(self, point):
@@ -131,7 +133,88 @@ class HRV:
                 
             self.current_peak = self.threshold
             self.peak_previous_index = self.current_peak_index
+            
+    def analyze_peaks(self, point):
+        self.bpm_update_count += 1
+        self.peak_i += 1
+        if point > self.threshold:
+            if point >= self.current_peak:
+                # Update peak and index when current is higher
+                self.current_peak = point
+                self.current_peak_index = self.peak_i
+        else:
+            # When there are two peaks and they are not the same one then
+            # Calculate ppi, and bpm 
+            if not(self.peak_previous_index is None) and not(self.current_peak_index == self.peak_previous_index):
+                interval = (self.current_peak_index - self.peak_previous_index)  # Erotus
+#                   sec = interval*sample_interval/1000 # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
+                #ppi = interval*sample_interval #
+                #minutes = (interval*sample_interval/1000)/60 # 4 is the ammount of ms pass for every point retrieved and the division of 1000 is ms to seconds  # Seconds
+                #bpm = 1/minutes
+                
+                self.intervals.append(interval)
+                self.total_intervals.append(interval)
+                                
+                if self.bpm_update_count >= 250*5: ## 250 samples = 1 second, 5 seconds
+                    total = 0
+                    if self.intervals: ##check if list exists to avoid dividing by zero
+                        print("total samples: ",len(self.intervals))
+                        print("average heartrate pre_correction: ", (60 * 1000) / sample_interval / (sum(self.intervals) / len(self.intervals)))
+                    
+                    self.intervals = [i for i in self.intervals if 75 < i < 375] ## Make list out of all usable intervals (75-500*4 ms)
+                    
+                    print("Usable samples: ",len(self.intervals))
+                    
+                    if self.intervals: ##check if list exists to avoid dividing by zero
+                        self.bpm_output = (60 * 1000) / sample_interval / (sum(self.intervals) / len(self.intervals)) ## one minute in ms divided by the average ppi
+                        
+                        print("average heartrate post_correction: ", (60 * 1000) / sample_interval / (sum(self.intervals) / len(self.intervals)))
+                        print("")
+                    
+                    self.intervals = []
+                    self.bpm_update_count = 0
+                
+            self.current_peak = self.threshold
+            self.peak_previous_index = self.current_peak_index
         
+    def analyze_variability(self):
+        self.total_intervals = [i for i in self.total_intervals if 75 < i < 375]
+        
+        mean_ppi = (sum(self.total_intervals) * 4) / len(self.total_intervals)
+        #mean_ppi = sample_interval / (sum(self.total_intervals) / len(self.total_intervals)) ## one minute in ms divided by the average ppi
+
+        mean_hr = (60 * 1000) / sample_interval / (sum(self.total_intervals) / len(self.total_intervals)) ## one minute in ms divided by the average ppi
+
+        #mean_hr = 0
+        #for interval in self.total_intervals:
+        #    mean_hr += (interval*4)/1000/60
+        #mean_hr /= len(self.total_intervals)
+        #mean_hr = sum(self.total_intervals) * 4 / 1000 / 60 / len(self.total_intervals)
+        
+        sdnn = 0 ##standard deviation of peak to peak interval length
+        for interval in self.total_intervals:
+            sdnn += (interval-mean_ppi)**2
+        sdnn /= len(self.total_intervals)-1
+        sdnn **= (1/2)
+        
+        rmssd = 0 #root mean square of successive differences of peak to 
+        for i in range(len(self.total_intervals)-1):
+            rmssd += (self.total_intervals[i+1]-self.total_intervals[i])**2
+            
+        rmssd /= len(self.total_intervals)-1
+        
+        rmssd **= (1/2)
+        
+        timestamp = time.localtime()
+        
+        self.analysis_results = {
+            "mean_ppi": mean_ppi,
+            "mean_hr" : mean_hr,
+            "sdnn" : sdnn,
+            "rmssd" : rmssd,
+            "timestamp": f"{timestamp[2]}.{timestamp[1]}.{timestamp[0]} {timestamp[3]}.{timestamp[4]}"
+        }
+        print(self.analysis_results["timestamp"])
         
 class Cursor:
     def __init__(self, cap = (0, 0), increment = 1, position = 0):
@@ -160,10 +243,11 @@ class UI:
         self.rot = encoder
         self.sensor = Sensor(sensor_pin)
         self.screen = self.menu_setup
-        self.data = []
+        self.history = []
         self.reset()
         self.sample_interval = 4
         self.interval = []
+        
         
     def display(self):
         while self.rot.fifo.has_data():
@@ -185,48 +269,6 @@ class UI:
         self.alt_cursor_1 = Cursor()
         self.alt_cursor_2 = Cursor()
         
-    def analysis_setup(self):
-        self.cursor.cap = (0, 1)
-        self.screen = self.analysis
-        
-    def analysis(self):
-        pass
-    def menu_setup(self):
-        self.cursor.cap = (0, 3)
-        self.screen = self.menu
-        
-    def menu(self):
-        oled.fill(0)
-        oled.text("1.Heart rate", 0, 0, 1)
-        oled.text("2.Basic HRV analysis", 0, 10, 1)
-        oled.text("3.Kubios", 0, 20, 1)
-        oled.text("4.History", 0, 30, 1)
-        oled.rect(0, self.cursor.position*10, 12, 8, 0, True)
-        oled.text("->", 0, self.cursor.position*10, 1)
-        
-        #print(self.pulse_sensor.read_u16())
-        
-
-        while self.rot.btn_fifo.has_data():
-            self.rot.btn_fifo.get()
-            self.reset()
-            if self.cursor.position == 0:
-                self.screen = self.heart_rate_start_screen
-            if self.cursor.position == 1:
-                self.screen = self.analysis_setup
-            if self.cursor.position == 2:
-                self.screen = self.kubios
-            if self.cursor.position == 3:
-                self.screen = self.history
-        
-    def heart_rate_start_screen(self):
-        oled.text("Start measurment", 0, 10, 1)
-        oled.text("by pressing the ", 0, 20, 1)
-        oled.text("rotary button", 0, 30, 1)
-        
-        while self.rot.btn_fifo.has_data():
-            self.rot.btn_fifo.get()
-            self.screen = self.sensor_setup
     def sensor_setup(self):
         # setup of peak detection and graph and threshold calculation
         self.hrv = HRV()
@@ -247,8 +289,48 @@ class UI:
         while self.hrv.threshold is None:
             if self.sensor.fifo.has_data():
                 self.hrv.calculate_threshold(self.sensor.fifo.get())   
-        self.screen = self.heart_rate_screen
+        self.screen = self.next_screen
         oled.fill(0)
+        
+    def menu_setup(self):
+        self.cursor.cap = (0, 3)
+        self.screen = self.menu
+        
+    def menu(self):
+        oled.fill(0)
+        oled.text("1.Heart rate", 0, 0, 1)
+        oled.text("2.Basic HRV analysis", 0, 10, 1)
+        oled.text("3.Kubios", 0, 20, 1)
+        oled.text("4.History", 0, 30, 1)
+        oled.rect(0, self.cursor.position*10, 12, 8, 0, True)
+        oled.text("->", 0, self.cursor.position*10, 1)
+        
+        #print(self.pulse_sensor.read_u16())
+        
+
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            print(f"{self.cursor.position}")
+            if self.cursor.position == 0:
+                self.screen = self.heart_rate_start_screen
+            if self.cursor.position == 1:
+                self.screen = self.analysis_start_screen
+            if self.cursor.position == 2:
+                self.screen = self.kubios
+            if self.cursor.position == 3:
+                self.screen = self.history_setup
+            self.reset()
+        
+    def heart_rate_start_screen(self):
+        oled.text("Start measurment", 0, 10, 1)
+        oled.text("by pressing the ", 0, 20, 1)
+        oled.text("rotary button", 0, 30, 1)
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.next_screen = self.heart_rate_screen
+            self.screen = self.sensor_setup
+        
     def heart_rate_screen(self):
         while self.sensor.fifo.has_data():
             point = self.sensor.fifo.get()
@@ -276,9 +358,95 @@ class UI:
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
             self.screen = self.heart_rate_screen_return
+            
     def heart_rate_screen_return(self):
         self.sensor.timer_end()
-        self.screen = self.menu
+        self.screen = self.menu_setup
+
+    def analysis_start_screen(self):
+        oled.text("Start measurment", 0, 10, 1)
+        oled.text("by pressing the ", 0, 20, 1)
+        oled.text("skibidi", 0, 30, 1)
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.next_screen = self.analysis_setup
+            self.screen = self.sensor_setup
+            
+    def analysis_setup(self):
+        self.time = time.ticks_ms()
+        self.screen = self.analysis_screen
+        
+    def analysis_screen(self):
+        while self.sensor.fifo.has_data():
+            point = self.sensor.fifo.get()
+            self.hrv.calculate_threshold(point)
+            self.hrv.analyze_peaks(point)
+            # Display
+            oled.rect(102,0, 28, 20, 0, 1)
+                #Scrolling graph
+            self.ypos_sum += transform(point-self.hrv.min_point, self.hrv.normalization_value*0.6, -20)
+            self.ysum_i += 1
+            if self.ysum_i > 6:
+                current_ypos = int((self.ypos_sum / 7))
+                oled.line(self.xpos, 0,self.xpos, 64, 0)
+                oled.line(self.xpos-1, 0,self.xpos-1, 64, 0)
+                oled.line(self.xpos+1,self.lastpos,self.xpos,current_ypos, 1)
+                self.lastpos = current_ypos
+                self.ypos_sum = 0
+                self.ysum_i = 0
+                self.xpos -= 1
+            if self.xpos < 0:
+                self.xpos = 100
+                
+                #text
+            oled.text(f"{int(self.hrv.bpm_output)}",102,0,1)
+            oled.text("Collecting data",10,50,1)
+            
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.screen = self.heart_rate_screen_return
+        
+        ms = time.ticks_ms()
+        if time.ticks_diff(ms, self.time) > 7000:
+            self.screen = self.analysis_result_setup
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.next_screen = self.analysis_screen
+            self.screen = self.sensor_setup
+    
+    def analysis_result_setup(self):
+        self.sensor.timer_end()
+        self.hrv.analyze_variability()
+        self.history.append(self.hrv.analysis_results)
+        self.screen = self.analysis_result
+        print(self.hrv.analysis_results)
+    
+    def analysis_result(self):
+        print(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}")
+        oled.fill(0)
+        oled.text(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}",2,0,1)
+        oled.text(f"mean hr: {self.hrv.analysis_results["mean_hr"]:.2f}",2,10,1)
+        oled.text(f"RMSSD: {self.hrv.analysis_results["rmssd"]:.2f}",2,20,1)
+        oled.text(f"SDNN: {self.hrv.analysis_results["sdnn"]:.2f}",2,30,1)
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.screen = self.menu_setup
+    def history_setup(self):
+        self.cursor.cap = (0, len(self.history))
+        self.screen = self.history_list
+    def history_list(self):
+        oled.text("return", 2, 0, 1)
+        for i in range(len(self.history)):
+            oled.text(f"Analysis {i+1}", 2, 10*(i+1), 1)
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.screen = self.menu_setup
+        
+            
 
 
 rot = Encoder(10, 11, 12)
