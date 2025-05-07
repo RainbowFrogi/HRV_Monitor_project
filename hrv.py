@@ -513,7 +513,7 @@ class UI:
             self.rot.btn_fifo.get()
             self.sensor.timer_end()
             self.screen = self.menu_setup
-    
+
     def kubios_result_setup(self):
         self.sensor.timer_end()
         self.hrv.analyze_variability()
