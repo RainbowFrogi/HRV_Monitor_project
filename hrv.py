@@ -44,10 +44,6 @@ def connect_wlan():
     # Print the IP address of the Pico
     print("Connection successful. Pico IP:", wlan.ifconfig()[0])
     
-def connect_mqtt():
-    mqtt_client=MQTTClient("1", BROKER_IP, port=BROKER_PORT)
-    mqtt_client.connect(clean_session=True)
-    return mqtt_client
 def transform(y, scale, offset):
     y *= scale
     y -= offset
@@ -90,6 +86,7 @@ class Sensor:
     def timer_end(self):
         self.timer.deinit()
         self.fifo = Fifo(100)
+        
         
 class HRV:
     def __init__(self):
@@ -243,47 +240,47 @@ class HRV:
         timestamp = time.localtime()
         
         self.analysis_results = {
+            "id": time.time(),
+            "timestamp": f"{timestamp[2]}.{timestamp[1]}.{timestamp[0]} {timestamp[3]}.{timestamp[4]}",
             "mean_ppi": int(mean_ppi),
             "mean_hr" : int(mean_hr),
             "sdnn" : int(sdnn),
-            "rmssd" : int(rmssd),
-            "timestamp": f"{timestamp[2]}.{timestamp[1]}.{timestamp[0]} {timestamp[3]}.{timestamp[4]}"
+            "rmssd" : int(rmssd)
         }
         print(self.analysis_results)
         try:
-            mqtt_client=connect_mqtt()
+            mqtt_client=self.connect_mqtt()
 
         except Exception as e:
             print(f"Failed to connect to MQTT: {e}")
 
         try:
             # Sending a message every 5 seconds.
-            topic = "pico/test"
+            topic = "hr-data"
             message = json.dumps(self.analysis_results)
             mqtt_client.publish(topic, message)
             print(f"Sending to MQTT: {topic} -> {message}")
             
         except Exception as e:
             print(f"Failed to send MQTT message: {e}")
+        self.analysis_results["type"] = "local"
         
         #print(self.analysis_results["timestamp"])
     def kubios_analysis(self):
-        self.total_intervals = [int(value*4) for value in self.total_intervals]
+        self.total_intervals = [int(value*4) for value in self.total_intervals if 75 < value < 375]
         print(self.total_intervals)
 
         kubios_request_id = time.time()
         
         self.kubios_analysis_results ={
             "id": kubios_request_id,
-            "type" : "RRI",
+            "type" : "PPI",
             "data" : self.total_intervals,
             "analysis": {"type": "readiness"}
-                
         }
-        #print(self.analysis_results["timestamp"])
         
         try:
-            mqtt_client=connect_mqtt()
+            mqtt_client=self.connect_mqtt()
 
         except Exception as e:
             print(f"Failed to connect to MQTT: {e}")
@@ -293,13 +290,60 @@ class HRV:
             topic = "kubios-request"
             message = json.dumps(self.kubios_analysis_results)
             mqtt_client.publish(topic, message)
+            received_kubios_message = ""
             print(f"Sending to MQTT: {topic} -> {message}")
-            
+            self.analysis_results = {}
+            while not len(self.analysis_results):
+                mqtt_client.check_msg()
+                time.sleep_ms(25)
+            self.analysis_results["type"] = "kubios"
+            mqtt_client.publish("hr-data", json.dumps(self.analysis_results))
+                
         except Exception as e:
             print(f"Failed to send MQTT message: {e}")
             
+            
+        mean_ppi = (sum(self.total_intervals) * 4) / len(self.total_intervals)
         
-        mean_ppi = (sum(self.total_intervals) * 4) / len(self.total_intervals)        
+
+    def connect_mqtt(self):
+        mqtt_client=MQTTClient("1", BROKER_IP, port=BROKER_PORT)
+        mqtt_client.set_callback(self.message_callback)
+        mqtt_client.connect(clean_session=True)
+        mqtt_client.subscribe("kubios-response")
+        return mqtt_client
+    
+    def message_callback(self, topic, msg):
+        print("Received message on topic:", topic.decode())
+        print("Message:", msg.decode())
+        payload = json.loads(msg.decode())
+        
+        if not payload:
+            return
+        
+
+        payload = json.loads(msg.decode())    # if msg is bytes
+
+        # 2) Extract the top‐level id
+        analysis_id = payload.get("id")
+
+        # 3) Drill into the nested analysis object
+        analysis = payload.get("data", {}) \
+                          .get("analysis", {})
+        
+        timestamp = time.localtime()
+        
+        self.analysis_results = {
+            "id": payload.get("id"),
+            "timestamp": f"{timestamp[2]}.{timestamp[1]}.{timestamp[0]} {timestamp[3]}.{timestamp[4]}",
+            #"timestamp": analysis.get("create_timestamp"),
+            "mean_hr" : analysis.get("mean_hr_bpm"),
+            "mean_ppi": analysis.get("mean_rr_ms"),
+            "rmssd" : analysis.get("rmssd_ms"),
+            "sdnn" : analysis.get("sdnn_ms"),
+            "sns" : analysis.get("sns_index"),
+            "pns" : analysis.get("pns_index")
+        }
         
         
 class Cursor:
@@ -563,7 +607,7 @@ class UI:
             self.screen = self.heart_rate_screen_return
         
         ms = time.ticks_ms()
-        if time.ticks_diff(ms, self.time) > 10000:
+        if time.ticks_diff(ms, self.time) >15000:
             self.screen = self.kubios_result_setup
         
         while self.rot.btn_fifo.has_data():
