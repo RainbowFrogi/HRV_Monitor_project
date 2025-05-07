@@ -20,7 +20,7 @@ sample_interval = 4
 SSID = "KMD652_Group_5"
 PASSWORD = "T3am-5*4p"
 BROKER_IP = "192.168.5.253"
-BROKER_PORT = 1883
+BROKER_PORT = 21883
 
 def connect_wlan():
     # Connecting to the group WLAN
@@ -45,7 +45,7 @@ def connect_wlan():
     print("Connection successful. Pico IP:", wlan.ifconfig()[0])
     
 def connect_mqtt():
-    mqtt_client=MQTTClient("1", BROKER_IP)
+    mqtt_client=MQTTClient("1", BROKER_IP, port=BROKER_PORT)
     mqtt_client.connect(clean_session=True)
     return mqtt_client
 def transform(y, scale, offset):
@@ -268,34 +268,39 @@ class HRV:
         
         #print(self.analysis_results["timestamp"])
     def kubios_analysis(self):
-        
-        kubios_data = {} # Request data from kubios
-        
-        mean_ppi = (sum(self.total_intervals) * 4) / len(self.total_intervals)
-        #mean_ppi = sample_interval / (sum(self.total_intervals) / len(self.total_intervals)) ## one minute in ms divided by the average ppi
+        self.total_intervals = [int(value*4) for value in self.total_intervals]
+        print(self.total_intervals)
 
-        mean_hr = (60 * 1000) / sample_interval / (sum(self.total_intervals) / len(self.total_intervals)) ## one minute in ms divided by the average ppi
-
-        #mean_hr = 0
-        #for interval in self.total_intervals:
-        #    mean_hr += (interval*4)/1000/60
-        #mean_hr /= len(self.total_intervals)
-        #mean_hr = sum(self.total_intervals) * 4 / 1000 / 60 / len(self.total_intervals)
+        kubios_request_id = time.time()
         
-        sdnn = 0 ##standard deviation of peak to peak interval length
-        
-        rmssd = 0 #root mean square of successive differences of peak to 
-        
-        timestamp = time.localtime()
-        
-        self.analysis_results = {
-            "mean_ppi": mean_ppi,
-            "mean_hr" : mean_hr,
-            "sdnn" : sdnn,
-            "rmssd" : rmssd,
-            "timestamp": f"{timestamp[2]}.{timestamp[1]}.{timestamp[0]} {timestamp[3]}.{timestamp[4]}"
+        self.kubios_analysis_results ={
+            "id": kubios_request_id,
+            "type" : "RRI",
+            "data" : self.total_intervals,
+            "analysis": {"type": "readiness"}
+                
         }
         #print(self.analysis_results["timestamp"])
+        
+        try:
+            mqtt_client=connect_mqtt()
+
+        except Exception as e:
+            print(f"Failed to connect to MQTT: {e}")
+
+        try:
+            # Sending a message every 5 seconds.
+            topic = "kubios-request"
+            message = json.dumps(self.kubios_analysis_results)
+            mqtt_client.publish(topic, message)
+            print(f"Sending to MQTT: {topic} -> {message}")
+            
+        except Exception as e:
+            print(f"Failed to send MQTT message: {e}")
+            
+        
+        mean_ppi = (sum(self.total_intervals) * 4) / len(self.total_intervals)        
+        
         
 class Cursor:
     def __init__(self, cap = (0, 0), increment = 1, position = 0):
@@ -558,7 +563,7 @@ class UI:
             self.screen = self.heart_rate_screen_return
         
         ms = time.ticks_ms()
-        if time.ticks_diff(ms, self.time) > 30000:
+        if time.ticks_diff(ms, self.time) > 10000:
             self.screen = self.kubios_result_setup
         
         while self.rot.btn_fifo.has_data():
@@ -568,16 +573,16 @@ class UI:
 
     def kubios_result_setup(self):
         self.sensor.timer_end()
-        self.hrv.analyze_variability()
-        self.history.append(self.hrv.analysis_results)
+        self.hrv.kubios_analysis()
+        self.history.append(self.hrv.kubios_analysis_results)
         self.screen = self.kubios_result
     
     def kubios_result(self):
         oled.fill(0)
-        oled.text(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}",2,0,1)
-        oled.text(f"mean hr: {self.hrv.analysis_results["mean_hr"]:.2f}",2,10,1)
-        oled.text(f"RMSSD: {self.hrv.analysis_results["rmssd"]:.2f}",2,20,1)
-        oled.text(f"SDNN: {self.hrv.analysis_results["sdnn"]:.2f}",2,30,1)
+        #oled.text(f"mean ppi: {self.hrv.kubios_analysis_results["mean_ppi"]:.2f}",2,0,1)
+        #oled.text(f"mean hr: {self.hrv.kubios_analysis_results["mean_hr"]:.2f}",2,10,1)
+        #oled.text(f"RMSSD: {self.hrv.kubios_analysis_results["rmssd"]:.2f}",2,20,1)
+        #oled.text(f"SDNN: {self.hrv.kubios_analysis_results["sdnn"]:.2f}",2,30,1)
         
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
