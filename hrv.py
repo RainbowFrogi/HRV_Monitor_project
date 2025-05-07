@@ -7,6 +7,7 @@ from led import Led
 import micropython
 import network
 import time
+import json
 
 micropython.alloc_emergency_exception_buf(200)
 
@@ -242,12 +243,28 @@ class HRV:
         timestamp = time.localtime()
         
         self.analysis_results = {
-            "mean_ppi": mean_ppi,
-            "mean_hr" : mean_hr,
-            "sdnn" : sdnn,
-            "rmssd" : rmssd,
+            "mean_ppi": int(mean_ppi),
+            "mean_hr" : int(mean_hr),
+            "sdnn" : int(sdnn),
+            "rmssd" : int(rmssd),
             "timestamp": f"{timestamp[2]}.{timestamp[1]}.{timestamp[0]} {timestamp[3]}.{timestamp[4]}"
         }
+        print(self.analysis_results)
+        try:
+            mqtt_client=connect_mqtt()
+
+        except Exception as e:
+            print(f"Failed to connect to MQTT: {e}")
+
+        try:
+            # Sending a message every 5 seconds.
+            topic = "pico/test"
+            message = json.dumps(self.analysis_results)
+            mqtt_client.publish(topic, message)
+            print(f"Sending to MQTT: {topic} -> {message}")
+            
+        except Exception as e:
+            print(f"Failed to send MQTT message: {e}")
         
         #print(self.analysis_results["timestamp"])
     def kubios_analysis(self):
@@ -472,7 +489,7 @@ class UI:
             self.screen = self.heart_rate_screen_return
         
         ms = time.ticks_ms()
-        if time.ticks_diff(ms, self.time) > 30000:
+        if time.ticks_diff(ms, self.time) > 7000:
             self.screen = self.analysis_result_setup
         
         while self.rot.btn_fifo.has_data():
@@ -580,23 +597,6 @@ class UI:
          
          
 connect_wlan()
-
-try:
-    mqtt_client=connect_mqtt()
-
-except Exception as e:
-    print(f"Failed to connect to MQTT: {e}")
-
-try:
-    # Sending a message every 5 seconds.
-    topic = "pico/test"
-    message = "jee"
-    mqtt_client.publish(topic, message)
-    print(f"Sending to MQTT: {topic} -> {message}")
-    
-except Exception as e:
-    print(f"Failed to send MQTT message: {e}")
-
 rot = Encoder(10, 11, 12)
 ui = UI(rot, 27, 9, 7)
 while True:
