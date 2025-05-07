@@ -1,10 +1,13 @@
 from machine import UART, Pin, I2C, Timer, ADC
+from umqtt.simple import MQTTClient
 from ssd1306 import SSD1306_I2C
 from piotimer import Piotimer
 from fifo import Fifo
 from led import Led
-import time
 import micropython
+import network
+import time
+
 micropython.alloc_emergency_exception_buf(200)
 
 i2c = I2C(1, scl=Pin(15), sda=Pin(14), freq=400000)
@@ -13,6 +16,37 @@ oled_height = 64
 oled = SSD1306_I2C(oled_width, oled_height, i2c)
 sample_interval = 4
 
+SSID = "KMD652_Group_5"
+PASSWORD = "T3am-5*4p"
+BROKER_IP = "192.168.5.253"
+BROKER_PORT = 1883
+
+def connect_wlan():
+    # Connecting to the group WLAN
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    
+    nets = wlan.scan()               # returns list of tuples
+    print("Nearby SSIDs:")
+    for net in nets:
+        ssid = net[0].decode()
+        print("  ", ssid)
+    
+    wlan.connect(SSID, PASSWORD)
+    print(wlan)
+
+    # Attempt to connect once per second
+    while wlan.isconnected() == False:
+        print("Connecting... ")
+        time.sleep(1)
+
+    # Print the IP address of the Pico
+    print("Connection successful. Pico IP:", wlan.ifconfig()[0])
+    
+def connect_mqtt():
+    mqtt_client=MQTTClient("1", BROKER_IP)
+    mqtt_client.connect(clean_session=True)
+    return mqtt_client
 def transform(y, scale, offset):
     y *= scale
     y -= offset
@@ -215,6 +249,8 @@ class HRV:
             "timestamp": f"{timestamp[2]}.{timestamp[1]}.{timestamp[0]} {timestamp[3]}.{timestamp[4]}"
         }
         print(self.analysis_results["timestamp"])
+
+        
         
 class Cursor:
     def __init__(self, cap = (0, 0), increment = 1, position = 0):
@@ -424,7 +460,7 @@ class UI:
         print(self.hrv.analysis_results)
     
     def analysis_result(self):
-        print(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}")
+        #print(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}")
         oled.fill(0)
         oled.text(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}",2,0,1)
         oled.text(f"mean hr: {self.hrv.analysis_results["mean_hr"]:.2f}",2,10,1)
@@ -445,9 +481,25 @@ class UI:
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
             self.screen = self.menu_setup
-        
-            
+         
+         
+connect_wlan()
 
+try:
+    mqtt_client=connect_mqtt()
+
+except Exception as e:
+    print(f"Failed to connect to MQTT: {e}")
+
+try:
+    # Sending a message every 5 seconds.
+    topic = "pico/test"
+    message = "jee"
+    mqtt_client.publish(topic, message)
+    print(f"Sending to MQTT: {topic} -> {message}")
+    
+except Exception as e:
+    print(f"Failed to send MQTT message: {e}")
 
 rot = Encoder(10, 11, 12)
 ui = UI(rot, 27, 9, 7)
