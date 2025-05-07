@@ -214,7 +214,36 @@ class HRV:
             "rmssd" : rmssd,
             "timestamp": f"{timestamp[2]}.{timestamp[1]}.{timestamp[0]} {timestamp[3]}.{timestamp[4]}"
         }
-        print(self.analysis_results["timestamp"])
+        #print(self.analysis_results["timestamp"])
+    def kubios_analysis(self):
+        
+        kubios_data = {} # Request data from kubios
+        
+        mean_ppi = (sum(self.total_intervals) * 4) / len(self.total_intervals)
+        #mean_ppi = sample_interval / (sum(self.total_intervals) / len(self.total_intervals)) ## one minute in ms divided by the average ppi
+
+        mean_hr = (60 * 1000) / sample_interval / (sum(self.total_intervals) / len(self.total_intervals)) ## one minute in ms divided by the average ppi
+
+        #mean_hr = 0
+        #for interval in self.total_intervals:
+        #    mean_hr += (interval*4)/1000/60
+        #mean_hr /= len(self.total_intervals)
+        #mean_hr = sum(self.total_intervals) * 4 / 1000 / 60 / len(self.total_intervals)
+        
+        sdnn = 0 ##standard deviation of peak to peak interval length
+        
+        rmssd = 0 #root mean square of successive differences of peak to 
+        
+        timestamp = time.localtime()
+        
+        self.analysis_results = {
+            "mean_ppi": mean_ppi,
+            "mean_hr" : mean_hr,
+            "sdnn" : sdnn,
+            "rmssd" : rmssd,
+            "timestamp": f"{timestamp[2]}.{timestamp[1]}.{timestamp[0]} {timestamp[3]}.{timestamp[4]}"
+        }
+        #print(self.analysis_results["timestamp"])
         
 class Cursor:
     def __init__(self, cap = (0, 0), increment = 1, position = 0):
@@ -316,7 +345,7 @@ class UI:
             if self.cursor.position == 1:
                 self.screen = self.analysis_start_screen
             if self.cursor.position == 2:
-                self.screen = self.kubios
+                self.screen = self.kubios_start_screen
             if self.cursor.position == 3:
                 self.screen = self.history_setup
             self.reset()
@@ -408,23 +437,21 @@ class UI:
             self.screen = self.heart_rate_screen_return
         
         ms = time.ticks_ms()
-        if time.ticks_diff(ms, self.time) > 7000:
+        if time.ticks_diff(ms, self.time) > 30000:
             self.screen = self.analysis_result_setup
         
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
-            self.next_screen = self.analysis_screen
-            self.screen = self.sensor_setup
+            self.sensor.timer_end()
+            self.screen = self.menu_setup
     
     def analysis_result_setup(self):
         self.sensor.timer_end()
         self.hrv.analyze_variability()
         self.history.append(self.hrv.analysis_results)
         self.screen = self.analysis_result
-        print(self.hrv.analysis_results)
     
     def analysis_result(self):
-        print(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}")
         oled.fill(0)
         oled.text(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}",2,0,1)
         oled.text(f"mean hr: {self.hrv.analysis_results["mean_hr"]:.2f}",2,10,1)
@@ -434,6 +461,76 @@ class UI:
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
             self.screen = self.menu_setup
+
+    def kubios_start_screen(self):
+        oled.text("Start measurment", 0, 10, 1)
+        oled.text("by pressing the ", 0, 20, 1)
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.next_screen = self.kubios_setup
+            self.screen = self.sensor_setup
+            
+    def kubios_setup(self):
+        self.time = time.ticks_ms()
+        self.screen = self.kubios_screen
+        
+    def kubios_screen(self):
+        while self.sensor.fifo.has_data():
+            point = self.sensor.fifo.get()
+            self.hrv.calculate_threshold(point)
+            self.hrv.analyze_peaks(point)
+            # Display
+            oled.rect(102,0, 28, 20, 0, 1)
+                #Scrolling graph
+            self.ypos_sum += transform(point-self.hrv.min_point, self.hrv.normalization_value*0.6, -20)
+            self.ysum_i += 1
+            if self.ysum_i > 6:
+                current_ypos = int((self.ypos_sum / 7))
+                oled.line(self.xpos, 0,self.xpos, 64, 0)
+                oled.line(self.xpos-1, 0,self.xpos-1, 64, 0)
+                oled.line(self.xpos+1,self.lastpos,self.xpos,current_ypos, 1)
+                self.lastpos = current_ypos
+                self.ypos_sum = 0
+                self.ysum_i = 0
+                self.xpos -= 1
+            if self.xpos < 0:
+                self.xpos = 100
+                
+                #text
+            oled.text(f"{int(self.hrv.bpm_output)}",102,0,1)
+            oled.text("Collecting data",10,50,1)
+            
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.screen = self.heart_rate_screen_return
+        
+        ms = time.ticks_ms()
+        if time.ticks_diff(ms, self.time) > 30000:
+            self.screen = self.kubios_result_setup
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.sensor.timer_end()
+            self.screen = self.menu_setup
+    
+    def kubios_result_setup(self):
+        self.sensor.timer_end()
+        self.hrv.analyze_variability()
+        self.history.append(self.hrv.analysis_results)
+        self.screen = self.kubios_result
+    
+    def kubios_result(self):
+        oled.fill(0)
+        oled.text(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}",2,0,1)
+        oled.text(f"mean hr: {self.hrv.analysis_results["mean_hr"]:.2f}",2,10,1)
+        oled.text(f"RMSSD: {self.hrv.analysis_results["rmssd"]:.2f}",2,20,1)
+        oled.text(f"SDNN: {self.hrv.analysis_results["sdnn"]:.2f}",2,30,1)
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.screen = self.menu_setup
+
     def history_setup(self):
         self.cursor.cap = (0, len(self.history))
         self.screen = self.history_list
