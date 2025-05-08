@@ -212,6 +212,9 @@ class HRV:
     def analyze_variability(self):
         self.total_intervals = [i for i in self.total_intervals if 75 < i < 375]
         
+        if len(self.total_intervals) < 1:
+            return True
+        
         mean_ppi = (sum(self.total_intervals) * 4) / len(self.total_intervals)
         #mean_ppi = sample_interval / (sum(self.total_intervals) / len(self.total_intervals)) ## one minute in ms divided by the average ppi
 
@@ -268,6 +271,8 @@ class HRV:
         #print(self.analysis_results["timestamp"])
     def kubios_analysis(self):
         self.total_intervals = [int(value*4) for value in self.total_intervals if 75 < value < 375]
+        if len(self.total_intervals) < 10:
+            return True
         print(self.total_intervals)
 
         kubios_request_id = time.time()
@@ -531,7 +536,7 @@ class UI:
                 
                 #text
             oled.text(f"{int(self.hrv.bpm_output)}",102,0,1)
-            oled.text("Collecting data",10,50,1)
+            oled.text("Collecting data",5,50,1)
             
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
@@ -548,7 +553,9 @@ class UI:
     
     def analysis_result_setup(self):
         self.sensor.timer_end()
-        self.hrv.analyze_variability()
+        if self.hrv.analyze_variability():
+            self.screen = self.measurement_error
+            return
         self.history.append(self.hrv.analysis_results)
         self.screen = self.analysis_result
     
@@ -601,14 +608,14 @@ class UI:
                 
                 #text
             oled.text(f"{int(self.hrv.bpm_output)}",102,0,1)
-            oled.text("Collecting data",10,50,1)
+            oled.text("Collecting data",5,50,1)
             
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
             self.screen = self.heart_rate_screen_return
         
         ms = time.ticks_ms()
-        if time.ticks_diff(ms, self.time) >15000:
+        if time.ticks_diff(ms, self.time) >30000:
             self.screen = self.kubios_result_setup
         
         while self.rot.btn_fifo.has_data():
@@ -618,7 +625,9 @@ class UI:
 
     def kubios_result_setup(self):
         self.sensor.timer_end()
-        self.hrv.kubios_analysis()
+        if self.hrv.kubios_analysis():
+            self.screen = self.measurement_error
+            return
         print(self.hrv.analysis_results)
         self.history.append(self.hrv.analysis_results)
         self.screen = self.kubios_result
@@ -673,6 +682,19 @@ class UI:
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
             self.screen = self.menu_setup
+            
+    def measurement_error(self):
+        self.sensor.timer_end()
+        oled.fill(0)
+        oled.text("Measurement", 0, 10, 1)
+        oled.text("error. ", 0, 20, 1)
+        oled.text("Press the", 0, 30, 1)
+        oled.text("rotary button", 0, 40, 1)
+        
+        while self.rot.btn_fifo.has_data():
+            self.rot.btn_fifo.get()
+            self.screen = self.menu_setup
+            self.sensor.timer_end()
 
 connect_wlan()
 rot = Encoder(10, 11, 12)
