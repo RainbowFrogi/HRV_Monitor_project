@@ -648,15 +648,26 @@ class UI:
     def history_setup(self):
         self.cursor.cap = (0, len(self.history))
         self.screen = self.history_list
+        self.list_length = len(self.history)
     def history_list(self):
         oled.fill(0)
         oled.text("  return", 0, 0, 1)
-        for i in range(len(self.history)):
-            oled.text(f"{i+1}.Analysis", 0, 10*(i+1), 1)
-        
-        oled.rect(0, self.cursor.position*10, 12, 8, 0, True)
-        oled.text("->", 0, self.cursor.position*10, 1)
+        if self.list_length < 5:
+            for i in range(self.list_length):
+                oled.text(f"{i+1}.Analysis", 0, 10*(i+1), 1)
+        else:
+            for i in range(5):
+                cursor = 0
+                if self.cursor.position>5:
+                    cursor = self.cursor.position-5
+                oled.text(f"{i+1+cursor}.Analysis", 0, 10*(i+1), 1)
+        cursor = self.cursor.position
+        if self.cursor.position>5:
+            cursor = 5
+        oled.rect(0, cursor*10, 12, 8, 0, True)
+        oled.text("->", 0, cursor*10, 1)
         print(self.cursor.position)
+        print(cursor)
         self.analysis_selected = self.cursor.position-1
         
         while self.rot.btn_fifo.has_data():
@@ -682,7 +693,7 @@ class UI:
         
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
-            self.screen = self.menu_setup
+            self.screen = self.history_setup
             
     def measurement_error(self):
         self.sensor.timer_end()
