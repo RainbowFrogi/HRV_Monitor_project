@@ -429,8 +429,8 @@ class UI:
     def menu(self):
         oled.fill(0)
         oled.text("1.Heart rate", 0, 0, 1)
-        oled.text("2.Basic HRV analysis", 0, 10, 1)
-        oled.text("3.Kubios", 0, 20, 1)
+        oled.text("2.HRV analysis", 0, 10, 1)
+        oled.text("3.Kubios cloud", 0, 20, 1)
         oled.text("4.History", 0, 30, 1)
         oled.rect(0, self.cursor.position*10, 12, 8, 0, True)
         oled.text("->", 0, self.cursor.position*10, 1)
@@ -496,7 +496,7 @@ class UI:
     def analysis_start_screen(self):
         oled.text("Start measurment", 0, 10, 1)
         oled.text("by pressing the ", 0, 20, 1)
-        oled.text("skibidi", 0, 30, 1)
+        oled.text("rotary button", 0, 30, 1)
         
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
@@ -566,6 +566,7 @@ class UI:
     def kubios_start_screen(self):
         oled.text("Start measurment", 0, 10, 1)
         oled.text("by pressing the ", 0, 20, 1)
+        oled.text("rotary button", 0, 30, 1)
         
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
