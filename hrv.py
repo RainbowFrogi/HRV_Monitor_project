@@ -543,7 +543,7 @@ class UI:
             self.screen = self.heart_rate_screen_return
         
         ms = time.ticks_ms()
-        if time.ticks_diff(ms, self.time) > 7000:
+        if time.ticks_diff(ms, self.time) > 30000:
             self.screen = self.analysis_result_setup
         
         while self.rot.btn_fifo.has_data():
@@ -615,7 +615,7 @@ class UI:
             self.screen = self.heart_rate_screen_return
         
         ms = time.ticks_ms()
-        if time.ticks_diff(ms, self.time) >30000:
+        if time.ticks_diff(ms, self.time) > 30000:
             self.screen = self.kubios_result_setup
         
         while self.rot.btn_fifo.has_data():
@@ -670,13 +670,14 @@ class UI:
         oled.fill(0)
         selected = self.history[self.analysis_selected]
         print(self.history[self.analysis_selected])
-        oled.text(f"mean ppi: {int(selected["mean_ppi"])}",2,8,1)
-        oled.text(f"mean hr: {int(selected["mean_hr"])}",2,16,1)
-        oled.text(f"RMSSD: {int(selected["rmssd"])}",2,24,1)
-        oled.text(f"SDNN: {int(selected["sdnn"])}",2,32,1)
+        oled.text(selected["timestamp"],4,0,1)
+        oled.text(f"mean ppi: {int(selected["mean_ppi"])}",0,8,1)
+        oled.text(f"mean hr: {int(selected["mean_hr"])}",0,16,1)
+        oled.text(f"RMSSD: {int(selected["rmssd"])}",0,24,1)
+        oled.text(f"SDNN: {int(selected["sdnn"])}",0,32,1)
         if selected["type"] == "kubios":
-            oled.text(f"SNS: {selected["sns"]:<.2f}",2,40,1)
-            oled.text(f"PNS: {selected["pns"]:.2f}",2,48,1)
+            oled.text(f"SNS: {selected["sns"]:.2f}",0,40,1)
+            oled.text(f"PNS: {selected["pns"]:.2f}",0,48,1)
             
         
         while self.rot.btn_fifo.has_data():
