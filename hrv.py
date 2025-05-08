@@ -557,7 +557,7 @@ class UI:
         oled.text(f"mean ppi: {self.hrv.analysis_results["mean_ppi"]:.2f}",2,0,1)
         oled.text(f"mean hr: {self.hrv.analysis_results["mean_hr"]:.2f}",2,10,1)
         oled.text(f"RMSSD: {self.hrv.analysis_results["rmssd"]:.2f}",2,20,1)
-        oled.text(f"SDNN: {self.hrv.analysis_results["sdnn"])}",2,30,1)
+        oled.text(f"SDNN: {self.hrv.analysis_results["sdnn"]}",2,30,1)
         
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
@@ -619,17 +619,18 @@ class UI:
     def kubios_result_setup(self):
         self.sensor.timer_end()
         self.hrv.kubios_analysis()
-        self.history.append(self.hrv.kubios_analysis_results)
+        print(self.hrv.analysis_results)
+        self.history.append(self.hrv.analysis_results)
         self.screen = self.kubios_result
     
     def kubios_result(self):
         oled.fill(0)
         oled.text(f"mean ppi: {int(self.hrv.analysis_results["mean_ppi"])}",2,0,1)
-        oled.text(f"mean hr: {in(self.hrv.analysis_results["mean_hr"])}",2,10,1)
+        oled.text(f"mean hr: {int(self.hrv.analysis_results["mean_hr"])}",2,10,1)
         oled.text(f"RMSSD: {int(self.hrv.analysis_results["rmssd"])}",2,20,1)
         oled.text(f"SDNN: {int(self.hrv.analysis_results["sdnn"])}",2,30,1)
-        oled.text(f"SNS: {int(self.hrv.analysis_results["sns"])}",2,40,1)
-        oled.text(f"PNS: {int(self.hrv.analysis_results["pns"])}",2,50,1)
+        oled.text(f"SNS: {self.hrv.analysis_results["sns"]:.2f}",2,40,1)
+        oled.text(f"PNS: {self.hrv.analysis_results["pns"]:.2f}",2,50,1)
         
         while self.rot.btn_fifo.has_data():
             self.rot.btn_fifo.get()
@@ -659,13 +660,14 @@ class UI:
     def history_result(self):
         oled.fill(0)
         selected = self.history[self.analysis_selected]
-        oled.text(f"mean ppi: {int(selected["mean_ppi"])}",2,10,1)
-        oled.text(f"mean hr: {int(selected["mean_hr"])}",2,20,1)
-        oled.text(f"RMSSD: {int(selected["rmssd"])}",2,30,1)
-        oled.text(f"SDNN: {int(selected["sdnn"])}",2,40,1)
+        print(self.history[self.analysis_selected])
+        oled.text(f"mean ppi: {int(selected["mean_ppi"])}",2,8,1)
+        oled.text(f"mean hr: {int(selected["mean_hr"])}",2,16,1)
+        oled.text(f"RMSSD: {int(selected["rmssd"])}",2,24,1)
+        oled.text(f"SDNN: {int(selected["sdnn"])}",2,32,1)
         if selected["type"] == "kubios":
-            oled.text(f"SNS: {selected["sns"].2f}",2,50,1)
-            oled.text(f"PNS: {selected["pns"]:.2f}",2,60,1)
+            oled.text(f"SNS: {selected["sns"]:<.2f}",2,40,1)
+            oled.text(f"PNS: {selected["pns"]:.2f}",2,48,1)
             
         
         while self.rot.btn_fifo.has_data():
@@ -677,8 +679,4 @@ rot = Encoder(10, 11, 12)
 ui = UI(rot, 27, 9, 7)
 while True:
     ui.display()
-    
-
-
-
 
