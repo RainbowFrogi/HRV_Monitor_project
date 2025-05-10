@@ -301,8 +301,8 @@ class HRV:
             while not len(self.analysis_results):
                 mqtt_client.check_msg()
                 time.sleep_ms(25)
-            self.analysis_results["type"] = "kubios"
             mqtt_client.publish("hr-data", json.dumps(self.analysis_results))
+            self.analysis_results["type"] = "kubios"
                 
         except Exception as e:
             print(f"Failed to send MQTT message: {e}")
